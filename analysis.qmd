@@ -1,4 +1,82 @@
 ---
 title: "Billboard Hot 100"
 author: "Emma"
+execute:
+  echo: false
 ---
+
+```{r}
+#| message: false
+library(tidyverse)
+```
+```{r}
+#| cache: true
+billboard <- read_csv("data/billboard.csv", show_col_types = FALSE)
+```
+```{r}
+song_summary <- billboard |>
+  pivot_longer(
+    cols = starts_with("wk"),
+    names_to = "week",
+    names_prefix = "wk",
+    names_transform = list(week = as.integer),
+    values_to = "rank",
+    values_drop_na = TRUE
+  ) |>
+  group_by(artist, track, date.entered) |>
+  summarize(
+    first_rank = first(rank),
+    best_rank = min(rank),
+    first_best_week = min(week[rank == min(rank)]),
+    total_weeks = n(),
+    .groups = "drop"
+  )
+
+top10 <- song_summary |>
+  filter(best_rank <= 10)
+
+fastest <- top10 |>
+  filter(best_rank == 1) |>
+  slice_min(first_best_week, n = 1, with_ties = FALSE)
+
+slowest <- top10 |>
+  filter(best_rank == 1) |>
+  slice_max(first_best_week, n = 1, with_ties = FALSE)
+
+longest <- top10 |>
+  slice_max(total_weeks, n = 1, with_ties = FALSE)
+
+notable <- bind_rows(fastest, slowest, longest) |>
+  mutate(song = paste(artist, "-", track)) |>
+  select(artist, track, date.entered, song) |>
+  distinct()
+
+top10_ranks <- billboard |>
+  pivot_longer(
+    cols = starts_with("wk"),
+    names_to = "week",
+    names_prefix = "wk",
+    names_transform = list(week = as.integer),
+    values_to = "rank",
+    values_drop_na = TRUE
+  ) |>
+  semi_join(top10, by = c("artist", "track", "date.entered")) |>
+  left_join(notable, by = c("artist", "track", "date.entered"))
+
+ggplot(
+  top10_ranks,
+  aes(x = week, y = rank, group = interaction(artist, track, date.entered))
+) +
+  geom_line(
+    data = filter(top10_ranks, is.na(song)),
+    color = "gray70",
+    alpha = 0.6
+  ) +
+  geom_line(
+    data = filter(top10_ranks, !is.na(song)),
+    aes(color = song),
+    linewidth = 1
+  ) +
+  scale_y_reverse() +
+  labs(x = "Week on chart", y = "Rank", color = "Notable songs")
+```
